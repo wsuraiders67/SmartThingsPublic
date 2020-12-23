@@ -1,5 +1,5 @@
 /**
- *  Copyright 2017 SmartThings
+ *  Copyright 2017-2018 SmartThings
  *
  *  Device Handler for a simulated mixed-mode RGB light bulb
  *
@@ -13,7 +13,7 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *  Author: SmartThings
- *  Date: 2017-05-25
+ *  Date: 2017-10-09
  *
  */
 import groovy.transform.Field
@@ -36,7 +36,7 @@ import groovy.transform.Field
 ]
 
 metadata {
-    definition (name: "Simulated RGB Bulb", namespace: "smartthings/testing", author: "SmartThings") {
+    definition (name: "Simulated RGB Bulb", namespace: "smartthings/testing", author: "SmartThings", ocfDeviceType: "oic.d.light") {
         capability "HealthCheck"
         capability "Actuator"
         capability "Sensor"
@@ -52,6 +52,9 @@ metadata {
         attribute  "bulbValue", "string"
         attribute  "colorIndicator", "number"
         command    "simulateBulbState"
+
+        command    "markDeviceOnline"
+        command    "markDeviceOffline"
     }
 
     // UI tile definitions
@@ -60,8 +63,8 @@ metadata {
             tileAttribute ("device.switch", key: "PRIMARY_CONTROL") {
                 attributeState "on", label:'${name}', action:"switch.off", icon:"st.switches.light.on", backgroundColor:"#00A0DC", nextState:"turningOff"
                 attributeState "off", label:'${name}', action:"switch.on", icon:"st.switches.light.off", backgroundColor:"#FFFFFF", nextState:"turningOn"
-                attributeState "turningOn", label:'Turning On', action:"switch.off", icon:"st.switches.light.on", backgroundColor:"#00A0DC", nextState:"on"
-                attributeState "turningOff", label:'Turning Off', action:"switch.on", icon:"st.switches.light.off", backgroundColor:"#FFFFFF", nextState:"off"
+                attributeState "turningOn", label:'Turning On', icon:"st.switches.light.off", backgroundColor:"#FFFFFF", nextState:"on"
+                attributeState "turningOff", label:'Turning Off', icon:"st.switches.light.on", backgroundColor:"#00A0DC", nextState:"off"
             }
             tileAttribute ("device.level", key: "SLIDER_CONTROL") {
                 attributeState "level", action: "setLevel"
@@ -210,7 +213,7 @@ metadata {
             state "bulbValue", label: '${currentValue}'
         }
 
-        standardTile("refresh", "device.switch", inactiveLabel: false, decoration: "flat", width: 3, height: 1) {
+        standardTile("refresh", "device.switch", inactiveLabel: false, decoration: "flat", width: 2, height: 1) {
             state "default", label: "", action: "refresh", icon: "st.secondary.refresh"
         }
 
@@ -218,8 +221,15 @@ metadata {
             state "default", label: "Reset", action: "configure"
         }
 
+        standardTile("deviceHealthControl", "device.healthStatus", decoration: "flat", width: 2, height: 2, inactiveLabel: false) {
+            state "online",  label: "ONLINE", backgroundColor: "#00A0DC", action: "markDeviceOffline", icon: "st.Health & Wellness.health9", nextState: "goingOffline", defaultState: true
+            state "offline", label: "OFFLINE", backgroundColor: "#E86D13", action: "markDeviceOnline", icon: "st.Health & Wellness.health9", nextState: "goingOnline"
+            state "goingOnline", label: "Going ONLINE", backgroundColor: "#FFFFFF", icon: "st.Health & Wellness.health9"
+            state "goingOffline", label: "Going OFFLINE", backgroundColor: "#FFFFFF", icon: "st.Health & Wellness.health9"
+        }
+        
         main(["switch"])
-        details(["switch", "bulbValue", "colorIndicator", "refresh", "reset"])
+        details(["switch", "bulbValue", "colorIndicator", "refresh", "deviceHealthControl", "reset"])
     }
 }
 
@@ -229,7 +239,7 @@ metadata {
 
 // parse events into attributes
 def parse(String description) {
-    log.trace "parse $description"
+    log.trace "Executing parse $description"
     def parsedEvents
     def pair = description?.split(":")
     if (!pair || pair.length < 2) {
@@ -241,12 +251,13 @@ def parse(String description) {
         }
         parsedEvents = createEvent(name: name, value: pair[1]?.trim())
     }
+    done()
     return parsedEvents
 }
 
 def installed() {
     log.trace "Executing 'installed'"
-    initialize()
+    configure()
 }
 
 def updated() {
@@ -259,6 +270,7 @@ def updated() {
 //
 
 def ping() {
+    log.trace "Executing 'ping'"
     refresh()
 }
 
@@ -270,11 +282,17 @@ def refresh() {
     } else {
         simulateBulbState(currentMode)
     }
+    done()
 }
 
 def configure() {
     log.trace "Executing 'configure'"
-    // this would be for a physical decive being assigned a handler
+    // this would be for a physical device when it gets a handler assigned to it
+
+    // for HealthCheck
+    sendEvent(name: "DeviceWatch-Enroll", value: [protocol: "cloud", scheme:"untracked"].encodeAsJson(), displayed: false)
+    markDeviceOnline()
+
     initialize()
 }
 
@@ -282,17 +300,19 @@ def on() {
     log.trace "Executing 'on'"
     turnOn()
     simulateBulbState(state.lastMode)
+    done()
 }
 
 def off() {
     log.trace "Executing 'off'"
     turnOff()
     simulateBulbState(MODE.OFF)
+    done()
 }
 
-def setLevel(levelPercent) {
+def setLevel(levelPercent, rate = null) {
     Integer boundedPercent = boundInt(levelPercent, PERCENT_RANGE)
-    log.trace "executing 'setLevel' ${boundedPercent}%"
+    log.trace "Executing 'setLevel' ${boundedPercent}%"
     def effectiveMode = device.currentValue("bulbMode")
     if (boundedPercent > 0) { // just not if the brightness is set to zero
         implicitOn()
@@ -310,12 +330,14 @@ def setSaturation(saturationPercent) {
     log.trace "Executing 'setSaturation' ${saturationPercent}/100"
     Integer currentHue = device.currentValue("hue")
     setColor(currentHue, saturationPercent)
+    // setColor will call done() for us
 }
 
 def setHue(huePercent) {
     log.trace "Executing 'setHue' ${huePercent}/100"
     Integer currentSaturation = device.currentValue("saturation")
     setColor(huePercent, currentSaturation)
+    // setColor will call done() for us
 }
 
 /**
@@ -324,56 +346,71 @@ def setHue(huePercent) {
  * @param Integer saturationPercent     percentage of saturtion 0-100
  */
 def setColor(Integer huePercent, Integer saturationPercent) {
-    Integer boundedHue = boundInt(huePercent, PERCENT_RANGE)
-    Integer boundedSaturation = boundInt(saturationPercent, PERCENT_RANGE)
-    String logMsg ="executing 'setColor' from separate values hue: $boundedHue, saturation: $boundedSaturation"
-    if (huePercent != boundedHue || saturationPercent != boundedSaturation) {
-        logMsg += " (pre-bounded values hue: $huePercent, saturation: $saturationPercent)"
-    }
-    log.trace logMsg
-    Map colorHSMap = buildColorHSMap(hue, saturation)
-    setColor(colorHSMap)
+    log.trace "Executing 'setColor' from separate values hue: $huePercent, saturation: $saturationPercent"
+    Map colorHSMap = buildColorHSMap(huePercent, saturationPercent)
+    setColor(colorHSMap) // call the capability version method overload
 }
 
 /**
  * setColor overload which accepts a hex RGB string
  * @param String hex    RGB color donoted as a hex string in format #1F1F1F
  */
-def setColor(String hex) {
-    log.trace "executing 'setColor' from hex $hex"
+def setColor(String rgbHex) {
+    log.trace "Executing 'setColor' from hex $rgbHex"
     if (hex == "#000000") {
         // setting to black? turn it off.
         off()
     } else {
-        List hsvList = colorUtil.hexToHsv(hex)
+        List hsvList = colorUtil.hexToHsv(rgbHex)
         Map colorHSMap = buildColorHSMap(hsvList[0], hsvList[1])
-        setColor(colorHSMap)
+        setColor(colorHSMap) // call the capability version method overload
     }
 }
 
 /**
  * setColor as defined by the Color Control capability
+ * even if we had a hex RGB value before, we convert back to it from hue and sat percentages
  * @param colorHSMap
  */
 def setColor(Map colorHSMap) {
-    log.trace "executing 'setColor' $colorHSMap"
+    log.trace "Executing 'setColor' $colorHSMap"
+    Integer boundedHue = boundInt(colorHSMap?.hue?:0, PERCENT_RANGE)
+    Integer boundedSaturation = boundInt(colorHSMap?.saturation?:0, PERCENT_RANGE)
+    String rgbHex = colorUtil.hsvToHex(boundedHue, boundedSaturation)
+    log.debug "setColor: bounded hue and saturation: $boundedHue, $boundedSaturation; hex conversion: $rgbHex"
     implicitOn()
-    sendEvent(name: "hue", value: colorHSMap?.hue?:0)
-    sendEvent(name: "saturation", value: colorHSMap?.saturation?:0)
-    sendEvent(name: "color", value: colorHSMap)
+    sendEvent(name: "hue", value: boundedHue)
+    sendEvent(name: "saturation", value: boundedSaturation)
+    sendEvent(name: "color", value: rgbHex)
     simulateBulbState(MODE.COLOR)
+    done()
+}
+
+def markDeviceOnline() {
+    setDeviceHealth("online")
+}
+
+def markDeviceOffline() {
+    setDeviceHealth("offline")
+}
+
+private setDeviceHealth(String healthState) {
+    log.debug("healthStatus: ${device.currentValue('healthStatus')}; DeviceWatch-DeviceStatus: ${device.currentValue('DeviceWatch-DeviceStatus')}")
+    // ensure healthState is valid
+    List validHealthStates = ["online", "offline"]
+    healthState = validHealthStates.contains(healthState) ? healthState : device.currentValue("healthStatus")
+    // set the healthState
+    sendEvent(name: "DeviceWatch-DeviceStatus", value: healthState)
+    sendEvent(name: "healthStatus", value: healthState)
 }
 
 private initialize() {
     log.trace "Executing 'initialize'"
 
-    // for HealthCheck
-    sendEvent(name: "checkInterval", value: 12 * 60, displayed: false, data: [protocol: "cloud", scheme: "untracked"])
-
-    sendEvent(name: "hue", value: 0)
-    sendEvent(name: "saturation", value: 0)
+    sendEvent(name: "hue", value: BLACK.h)
+    sendEvent(name: "saturation", value: BLACK.s)
     // make sure to set color attribute!
-    sendEvent(name: "color", value: buildColorHSMap(0,0))
+    sendEvent(name: "color", value: BLACK.rgb)
 
     sendEvent(name: "level", value: 100)
 
@@ -424,15 +461,15 @@ private Map buildColorHSMap(hue, saturation) {
 private void simulateBulbState(String mode) {
     log.trace "Executing 'simulateBulbState' $mode"
     String valueText = "---"
-    String hexColor = BLACK.rgb
+    String rgbHex = BLACK.rgb
     Integer colorIndicator = 0
     switch (mode) {
         case MODE.COLOR:
             Integer huePct = device?.currentValue("hue")?:0
             Integer saturationPct = device?.currentValue("saturation")?:0
             colorIndicator = flattenHueSat(huePct, saturationPct) // flattened, scaled & offset hue & sat
-            hexColor = colorUtil.hsvToHex(huePct, saturationPct)
-            valueText = "$mode\n$hexColor"
+            rgbHex = colorUtil.hsvToHex(huePct, saturationPct)
+            valueText = "$mode\n$rgbHex"
             state.lastMode = MODE.COLOR
             break;
         case MODE.OFF:
@@ -462,6 +499,7 @@ private Map restoreHueSat(Integer flatHueSat) {
     flatHueSat -= COLOR_OFFSET
     Integer sat = flatHueSat % HUE_SCALE
     Integer hue = flatHueSat.intdiv(HUE_SCALE)
+    log.debug "restoreHueSat for $flatHueSat comes to hue: $hue, sat: $sat"
     return [hue: hue, sat: sat]
 }
 

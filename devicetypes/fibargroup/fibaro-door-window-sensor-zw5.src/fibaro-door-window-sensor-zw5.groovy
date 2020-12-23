@@ -18,11 +18,12 @@ metadata {
 		capability "Battery"
 		capability "Contact Sensor"
 		capability "Sensor"
-        capability "Configuration"
-        capability "Tamper Alert"
+        	capability "Configuration"
+        	capability "Tamper Alert"
 		capability "Health Check"
 
-        fingerprint deviceId: "0x0701", inClusters: "0x5E, 0x85, 0x59, 0x22, 0x20, 0x80, 0x70, 0x56, 0x5A, 0x7A, 0x72, 0x8E, 0x71, 0x73, 0x98, 0x2B, 0x9C, 0x30, 0x86, 0x84", outClusters: ""
+		fingerprint mfr: "010F", prod: "0700", deviceJoinName: "Fibaro Open/Closed Sensor"
+		fingerprint mfr: "010F", prod: "0701", deviceJoinName: "Fibaro Open/Closed Sensor"
 	}
 
 	simulator {
@@ -32,8 +33,8 @@ metadata {
     tiles(scale: 2) {
     	multiAttributeTile(name:"FGK", type:"lighting", width:6, height:4) {//with generic type secondary control text is not displayed in Android app
         	tileAttribute("device.contact", key:"PRIMARY_CONTROL") {
-            	attributeState("open", icon:"st.contact.contact.open", backgroundColor:"#e86d13")
-                attributeState("closed", icon:"st.contact.contact.closed", backgroundColor:"#00a0dc")
+                attributeState("open", label: "open", icon:"st.contact.contact.open", backgroundColor:"#e86d13")
+                attributeState("closed", label: "closed", icon:"st.contact.contact.closed", backgroundColor:"#00a0dc")
             }
 
             tileAttribute("device.tamper", key:"SECONDARY_CONTROL") {

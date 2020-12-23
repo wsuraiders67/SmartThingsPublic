@@ -12,18 +12,17 @@
  *
  */
 metadata {
-	definition (name: "Aeon Outlet", namespace: "smartthings", author: "SmartThings") {
+	definition (name: "Aeon Outlet", namespace: "smartthings", author: "SmartThings", runLocally: true, minHubCoreVersion: '000.017.0012', executeCommandsLocally: false) {
 		capability "Energy Meter"
 		capability "Actuator"
 		capability "Switch"
 		capability "Configuration"
-		capability "Polling"
 		capability "Refresh"
 		capability "Sensor"
 
 		command "reset"
 
-		fingerprint deviceId: "0x1001", inClusters: "0x25,0x32,0x27,0x2C,0x2B,0x70,0x85,0x56,0x72,0x86", outClusters: "0x82"
+		fingerprint deviceId: "0x1001", inClusters: "0x25,0x32,0x27,0x2C,0x2B,0x70,0x85,0x56,0x72,0x86", outClusters: "0x82", deviceJoinName: "Aeon Outlet"
 	}
 
 	// simulator metadata
@@ -119,13 +118,6 @@ def off() {
 	delayBetween([
 		zwave.basicV1.basicSet(value: 0x00).format(),
 		zwave.switchBinaryV1.switchBinaryGet().format()
-	])
-}
-
-def poll() {
-	delayBetween([
-		zwave.switchBinaryV1.switchBinaryGet().format(),
-		zwave.meterV2.meterGet().format()
 	])
 }
 

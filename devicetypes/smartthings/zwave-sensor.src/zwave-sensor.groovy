@@ -12,7 +12,7 @@
  *
  */
 metadata {
-	definition (name: "Z-Wave Sensor", namespace: "smartthings", author: "SmartThings") {
+	definition (name: "Z-Wave Sensor", namespace: "smartthings", author: "SmartThings", runLocally: true, minHubCoreVersion: '000.017.0012', executeCommandsLocally: false) {
 		capability "Sensor"
 		capability "Battery"
 		capability "Configuration"
@@ -325,6 +325,14 @@ def zwaveEvent(physicalgraph.zwave.commands.crc16encapv1.Crc16Encap cmd)
 
 def zwaveEvent(physicalgraph.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
 	def result = null
+	if (cmd.commandClass == 0x6C && cmd.parameter.size >= 4) { // Supervision encapsulated Message
+		// Supervision header is 4 bytes long, two bytes dropped here are the latter two bytes of the supervision header
+		cmd.parameter = cmd.parameter.drop(2)
+		// Updated Command Class/Command now with the remaining bytes
+		cmd.commandClass = cmd.parameter[0]
+		cmd.command = cmd.parameter[1]
+		cmd.parameter = cmd.parameter.drop(2)
+	}
 	def encapsulatedCommand = cmd.encapsulatedCommand(commandClassVersions)
 	log.debug "Command from endpoint ${cmd.sourceEndPoint}: ${encapsulatedCommand}"
 	if (encapsulatedCommand) {
@@ -346,7 +354,7 @@ def zwaveEvent(physicalgraph.zwave.Command cmd) {
 
 
 def configure() {
-	if (zwaveInfo.zw && zwaveInfo.zw.cc?.contains("84")) {
+	if (zwaveInfo.cc?.contains("84")) {
 		zwave.wakeUpV1.wakeUpNoMoreInformation().format()
 	}
 }
